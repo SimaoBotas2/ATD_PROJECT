@@ -1,0 +1,9 @@
+
+# Data folders
+/data_raw/
+/data_processed/
+
+# Large binary files
+*.mat
+*.pdf
+*.png
