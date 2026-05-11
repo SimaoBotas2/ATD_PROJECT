@@ -1,4 +1,4 @@
-%% 21
+%% Setup e Carregamento de Dados
 
 thisDir = fileparts(mfilename('fullpath'));
 rootDir = thisDir;
@@ -20,7 +20,7 @@ data = data.data;
 print_stft = true; %apenas para retirar o spam de plots, colocar a true para ver todos
 
 
-%% 22
+%% STFT: Espectrogramas dos Dígitos
 fs = data.taxaAmostragem(1);
 
 % Configurações para STFT
@@ -71,7 +71,7 @@ sgtitle(sprintf('Espectrogramas - Win=%d | Overlap=%.0f%% | NFFT=%d', w, ov*100,
 
 
 
-%% 23
+%% Extração de Características Tempo-Frequência (STFT)
 for i = 1:numSamples
     x = data.signal{i};
     x = x / max(abs(x)); % Normalizar
@@ -103,7 +103,7 @@ for i = 1:numSamples
 end
 
 
-%% 24
+%% Visualização das Características Extraídas
 
 if(print_stft)
 
@@ -202,7 +202,7 @@ data.specEntropy = specEntropy;%Average
 % Ou seja as melhores são
 % Centroide, Entropia e Energia
 
-%% 25
+%% Transformada de Wavelet Discreta (DWT)
 
 wname = 'db4';   % tipo da wavelet
 level = 1;       % nível de decomposição
@@ -251,6 +251,58 @@ grid on;
 data.DetailEnergy = detalhe;
 data.AproxEnergy = aprox;
 
-%% 26
+%% Guardar Dados
 
 save(fullfile(outDir, 'meta2_time_frequency_features.mat'), "data");
+
+
+%% Comparação de Janelas (Arquivo)
+% Comparação de diferentes tipos de janelas para análise FFT
+% Mantido para referência mas não utilizado na classificação final
+
+signal = data.signal{1};
+Fs = data.taxaAmostragem(1);
+n = length(signal);
+f = (0:n-1)*(Fs/n);
+f = f(1:floor(n/2)+1);
+
+sig_rect = signal .* ones(n,1);
+sig_hamming = signal .* hamming(n);
+sig_blackman = signal .* blackman(n);
+
+Y_rect = abs(fft(sig_rect))/n;
+Y_hamming = abs(fft(sig_hamming))/n;
+Y_black = abs(fft(sig_blackman))/n;
+
+Y_rect = Y_rect(1:floor(n/2)+1);
+Y_hamming = Y_hamming(1:floor(n/2)+1);
+Y_black = Y_black(1:floor(n/2)+1);
+
+figure;
+
+subplot(3,1,1);
+plot(f, Y_rect, 'r', 'LineWidth', 1.5);
+ylim([0 0.03]);
+xlim([0 3500]);
+title('Janela Retangular');
+xlabel('Frequência (Hz)');
+ylabel('Magnitude');
+grid on;
+
+subplot(3,1,2);
+plot(f, Y_hamming, 'b', 'LineWidth', 1.5);
+ylim([0 0.015]);
+xlim([0 3500]);
+title('Janela de Hamming');
+xlabel('Frequência (Hz)');
+ylabel('Magnitude');
+grid on;
+
+subplot(3,1,3);
+plot(f, Y_black, 'k', 'LineWidth', 1.5);
+ylim([0 0.015]);
+xlim([0 3500]);
+title('Janela de BlackMan');
+xlabel('Frequência (Hz)');
+ylabel('Magnitude');
+grid on;

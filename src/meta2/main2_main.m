@@ -26,16 +26,31 @@ data = S.meta1_fourier_features;
 %% 15
 fs = data.taxaAmostragem(1);
 
-% Configurações para STFT
-w = 512    ;
-ov = 0.5;
-nfft = 512;
+% Configurações otimizadas para STFT (identificadas por teste de parâmetros)
+w = 256;      % Window size otimizado
+ov = 0.5;     % Overlap otimizado
+nfft = 256;   % NFFT otimizado
 noverlap = floor(w * ov);
 
 figure('Name', 'Spectrogramas dos Dígitos 0 a 9');
 
 
 numSamples = height(data);
+
+% Features divididos em 3 regiões de tempo (início, meio, fim)
+specCentroid_start = zeros(numSamples, 1);
+specCentroid_mid = zeros(numSamples, 1);
+specCentroid_end = zeros(numSamples, 1);
+
+specEntropy_start = zeros(numSamples, 1);
+specEntropy_mid = zeros(numSamples, 1);
+specEntropy_end = zeros(numSamples, 1);
+
+energySpec_start = zeros(numSamples, 1);
+energySpec_mid = zeros(numSamples, 1);
+energySpec_end = zeros(numSamples, 1);
+
+% Features globais (para visualização)
 energySpec = zeros(numSamples,1);
 peakFreq = zeros(numSamples,1);
 specCentroid = zeros(numSamples,1);
@@ -74,34 +89,70 @@ sgtitle(sprintf('Espectrogramas - Win=%d | Overlap=%.0f%% | NFFT=%d', w, ov*100,
 
 
 
-%% 16 e 17 ?
+%% 16 e 17: Extração de características tempo-frequência
 
 for i = 1:numSamples
     x = data.signal{i};
     x = x / max(abs(x)); % Normalizar
 
-    % STFT (usei na run section e esqueci-me de retirar)
+    % STFT para extração de características
     [S, F, T, P] = spectrogram(x, w, noverlap, nfft, fs);
-    P_log = 10*log10(P + eps); % evitar log(0)
-    
-    % Média espectral ao longo do tempo
+
+    % Dividir em 3 regiões de tempo
+    numTimeFrames = length(T);
+    frameSize = floor(numTimeFrames / 3);
+
+    regions = {
+        1 : frameSize,                          % Início
+        frameSize+1 : 2*frameSize,              % Meio
+        2*frameSize+1 : numTimeFrames           % Fim
+    };
+
+    regionLabels = {'start', 'mid', 'end'};
+
+    for r = 1:3
+        idxRegion = regions{r};
+        P_region = P(:, idxRegion);
+
+        % Média espectral da região
+        meanSpectrumRegion = mean(P_region, 2);
+        totalPowerRegion = sum(meanSpectrumRegion);
+
+        % Centroide espectral
+        centroidRegion = sum(F .* meanSpectrumRegion) / (totalPowerRegion + eps);
+
+        % Entropia espectral
+        P_norm = meanSpectrumRegion / (sum(meanSpectrumRegion) + eps);
+        entropyRegion = -sum(P_norm .* log2(P_norm + eps));
+
+        % Energia (sum of all power values in region, not averaged)
+        energyRegion = sum(P_region, 'all');
+
+        % Armazenar por região
+        if r == 1
+            specCentroid_start(i) = centroidRegion;
+            specEntropy_start(i) = entropyRegion;
+            energySpec_start(i) = energyRegion;
+        elseif r == 2
+            specCentroid_mid(i) = centroidRegion;
+            specEntropy_mid(i) = entropyRegion;
+            energySpec_mid(i) = energyRegion;
+        else
+            specCentroid_end(i) = centroidRegion;
+            specEntropy_end(i) = entropyRegion;
+            energySpec_end(i) = energyRegion;
+        end
+    end
+
+    % Features globais (para visualização)
     meanSpectrum = mean(P, 2);
     totalPower = sum(meanSpectrum);
 
-    % 1. Energia média espectral
-    energySpec(i) = sum(meanSpectrum);
-
-    % 2. Pico de frequência (frequência com maior energia média)
+    energySpec(i) = sum(P, 'all');  % Sum all power values, not averaged
     [~, idxPeak] = max(meanSpectrum);
     peakFreq(i) = F(idxPeak);
-
-    % 3. Centroide espectral
     specCentroid(i) = sum(F .* meanSpectrum) / totalPower;
-
-    % 4. Largura de banda espectral
     specBW(i) = sqrt(sum(((F - specCentroid(i)).^2) .* meanSpectrum) / totalPower);
-
-    % 5. Entropia espectral (distribuição de energia)
     P_norm = meanSpectrum / sum(meanSpectrum);
     specEntropy(i) = -sum(P_norm .* log2(P_norm + eps));
 end
@@ -195,19 +246,31 @@ hold off;
         
 end
 
-data.energySpec = energySpec; % Average a distinguir digitos
-data.peakFreq = peakFreq; % Não muito boa para distinguir digitos 
-data.specCentroid = specCentroid; % Boa
+% Guardar features globais (para referência/visualização)
+data.energySpec = energySpec;
+data.peakFreq = peakFreq;
+data.specCentroid = specCentroid;
 data.specBW = specBW;
-data.specEntropy = specEntropy;%Average 
+data.specEntropy = specEntropy;
+
+% Guardar features divididas em tempo
+data.specCentroid_start = specCentroid_start;
+data.specCentroid_mid = specCentroid_mid;
+data.specCentroid_end = specCentroid_end;
+
+data.specEntropy_start = specEntropy_start;
+data.specEntropy_mid = specEntropy_mid;
+data.specEntropy_end = specEntropy_end;
+
+data.energySpec_start = energySpec_start;
+data.energySpec_mid = energySpec_mid;
+data.energySpec_end = energySpec_end; 
 
 
-% Ou seja as melhores são
-% Centroide, Entropia e Energia
+% Melhores características: Centroide, Entropia e Energia
 
 
-
-%% 18 ?
+%% 18: Transformada de Wavelet Discreta (DWT)
 
 wname = 'db4';   % tipo da wavelet
 level = 1;       % nível de decomposição
@@ -262,7 +325,8 @@ data.AproxEnergy = aprox;
 % Usar o algoritmo minimum distance
 
 energy_intervalos = reshape(cell2mat(data.energy), 3, [])';
-X = [data.specCentroid, data.specEntropy, data.energySpec];
+X = [data.specEntropy, data.specBW, ...
+     energy_intervalos(:, 1), energy_intervalos(:, 2)];
 Y = data.digit;
 
 X = zscore(X);
@@ -291,81 +355,51 @@ for i = 1:size(Xteste, 1)
     predictedDigit(i) = digitGroups(idx);
 end
 
-%% 20
-% Mostrar dígito verdadeiro vs predicted
+%% 20: Análise de Resultados
+
+% Mostrar amostras de previsão
 T = table(Yteste, predictedDigit);
 disp(T);
 
-% Calcular % de acerto
+% Calcular % de acerto global
 accuracy = mean(predictedDigit == Yteste) * 100;
-fprintf('\nTaxa de acerto: %.2f%%\n', accuracy);
+fprintf('\nTaxa de acerto global: %.2f%%\n', accuracy);
+
+% Confusion matrix
+confMatrix = confusionmat(Yteste, predictedDigit);
+
+figure('Name', 'Confusion Matrix');
+imagesc(confMatrix);
+colorbar;
+xlabel('Dígito Predito');
+ylabel('Dígito Real');
+title('Matriz de Confusão - Classificador Minimum Distance');
+xticks(1:10);
+yticks(1:10);
+xticklabels(0:9);
+yticklabels(0:9);
+
+% Adicionar números na matriz
+for i = 1:10
+    for j = 1:10
+        text(j, i, num2str(confMatrix(i,j)), 'HorizontalAlignment', 'center', ...
+            'VerticalAlignment', 'middle', 'Color', 'white', 'FontWeight', 'bold');
+    end
+end
+
+% Acurácia por dígito
+fprintf('\nAcuraccy por dígito:\n');
+for d = 0:9
+    idxDigit = Yteste == d;
+    if sum(idxDigit) > 0
+        accDigit = mean(predictedDigit(idxDigit) == Yteste(idxDigit)) * 100;
+        fprintf('Dígito %d: %.2f%% (%d amostras)\n', d, accDigit, sum(idxDigit));
+    end
+end
 
 
 %% 21
 
 save(fullfile(outDir, 'meta2_windowing_comparison.mat'), "data");
-%CONCLUSAO (FUTURA)
-
-
-
-%% extra idk 
-
-%Acho que esta parte nao é pra meter no trabalho final
-
-
-% Selecionar uma amostra (ex: a primeira)
-signal = data.signal{1};
-Fs = data.taxaAmostragem(1);
-n = length(signal);
-f = (0:n-1)*(Fs/n);
-f = f(1:floor(n/2)+1);
-
-
-%Aplicar janelas
-sig_rect = signal .* ones(n,1);
-sig_hamming = signal .* hamming(n);
-sig_blackman = signal .* blackman(n);
-
-Y_rect = abs(fft(sig_rect))/n;
-Y_hamming = abs(fft(sig_hamming))/n;
-Y_black = abs(fft(sig_blackman))/n;
-
-Y_rect = Y_rect(1:floor(n/2)+1);
-Y_hamming = Y_hamming(1:floor(n/2)+1);
-Y_black = Y_black(1:floor(n/2)+1);
-
-% Plot
-figure;
-
-%Boa resolução do sinal, mas com muita leakage
-subplot(3,1,1);
-plot(f, Y_rect, 'r', 'LineWidth', 1.5);
-ylim([0 0.03]);
-xlim([0 3500]);
-title('Janela Retangular');
-xlabel('Frequência (Hz)');
-ylabel('Magnitude');
-grid on;
-
-%Leakage menor em relação à retangular, bom equilibrio entre resolução e leakage  
-subplot(3,1,2);
-plot(f, Y_hamming, 'b', 'LineWidth', 1.5);
-ylim([0 0.015]);
-xlim([0 3500]);
-title('Janela de Hamming');
-xlabel('Frequência (Hz)');
-ylabel('Magnitude');
-grid on;
-
-
-%Perda de alguma resolução, mas diminuição de leakage
-subplot(3,1,3);
-plot(f, Y_black, 'k', 'LineWidth', 1.5);
-ylim([0 0.015]);
-xlim([0 3500]);
-title('Janela de BlackMan');
-xlabel('Frequência (Hz)');
-ylabel('Magnitude');
-grid on;
 
 
