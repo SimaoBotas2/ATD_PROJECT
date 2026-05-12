@@ -321,21 +321,23 @@ data.AproxEnergy = aprox;
 
 
 
-%% 19
-% Usar o algoritmo minimum distance
+%% KNN Classification
 
 energy_intervalos = reshape(cell2mat(data.energy), 3, [])';
+
 X = [data.specEntropy, data.specBW, ...
      energy_intervalos(:, 1), energy_intervalos(:, 2)];
+
 Y = data.digit;
 
+% Normalizar features
 X = zscore(X);
 
 % Separar treino (70%) e teste (30%)
 cv = cvpartition(Y, 'HoldOut', 0.3);
 
-idxTreino = training(cv); % Logical array: 1 se é treino
-idxTeste  = test(cv);      % Logical array: 1 se é teste
+idxTreino = training(cv);
+idxTeste  = test(cv);
 
 Xtreino = X(idxTreino, :);
 Ytreino = Y(idxTreino);
@@ -343,18 +345,28 @@ Ytreino = Y(idxTreino);
 Xteste = X(idxTeste, :);
 Yteste = Y(idxTeste);
 
-% Calcular a média das features no treino
-[centroids, digitGroups] = grpstats(Xtreino, Ytreino, {'mean', 'gname'});
-digitGroups = str2double(digitGroups);
+%% Criar modelo KNN
+k = 4; % podes testar outros valores
 
-% Classificar amostras de teste
-predictedDigit = zeros(size(Yteste));
-for i = 1:size(Xteste, 1)
-    distances = sqrt(sum((Xteste(i,:) - centroids).^2, 2));
-    [~, idx] = min(distances);
-    predictedDigit(i) = digitGroups(idx);
-end
+modeloKNN = fitcknn( ...
+    Xtreino, ...
+    Ytreino, ...
+    'NumNeighbors', k, ...
+    'Distance', 'euclidean', ...
+    'Standardize', false);
 
+%% Fazer previsões
+predictedDigit = predict(modeloKNN, Xteste);
+
+%% Accuracy
+accuracy = sum(predictedDigit == Yteste) / length(Yteste);
+
+fprintf('Accuracy: %.2f%%\n', accuracy * 100);
+
+%% Matriz de confusão
+figure;
+confusionchart(Yteste, predictedDigit);
+title(sprintf('KNN Confusion Matrix (k = %d)', k));
 %% 20: Análise de Resultados
 
 % Mostrar amostras de previsão

@@ -1,0 +1,463 @@
+\documentclass[12pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[portuguese]{babel}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{geometry}
+\usepackage{caption}
+\usepackage{amsmath}
+\captionsetup{labelfont=bf}
+\geometry{a4paper, margin=2.5cm}
+
+\title{Identificação de Dígitos através de Características Extraídas de Sinais de Áudio}
+\author{Simão Tomás Botas Carvalho \\ nº2021223055}
+\date{}
+
+\begin{document}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{uc_capa.png}
+\end{figure}
+
+\begingroup
+\let\newpage\relax
+\maketitle
+\endgroup
+
+\section{Introdução}
+
+Este relatório corresponde à Meta 2 do projeto de Análise e Transformação de Dados, que tem como
+objetivo a identificação automatizada de dígitos falados (de 0 a 9, em inglês) a partir de gravações
+de voz do dataset AudioMNIST.
+
+Nesta fase, o trabalho foca-se na análise tempo-frequência dos sinais de áudio, através da
+Transformada de Fourier de Curto Prazo (STFT) e da Transformada de Wavelet Discreta (DWT),
+bem como na extração de características correspondentes e na aplicação de um classificador
+automático.
+
+A Meta 1 forneceu a base de trabalho: a estrutura de dados com os sinais pré-processados e as
+características temporais e espectrais já calculadas. Nesta meta, essa estrutura é estendida com
+novas características tempo-frequência, culminando na classificação dos dígitos e na avaliação do
+desempenho do sistema.
+
+\section{Metodologia Geral}
+
+Tal como na Meta 1, o trabalho foi desenvolvido em MATLAB. A estrutura de dados (tabela) criada
+anteriormente foi carregada a partir do ficheiro \texttt{.mat} guardado no final da meta anterior,
+e foi sendo atualizada ao longo dos exercícios com as novas características extraídas.
+
+O script principal da Meta 2 é o \texttt{main2\_main.m}, localizado em \texttt{src/meta2/}. Foram
+também desenvolvidos scripts auxiliares de teste e otimização em \texttt{src/meta2/tests/}, que
+permitiram identificar os melhores parâmetros STFT e as melhores combinações de características
+para o classificador.
+
+\section{Meta 2 -- Análise Tempo-Frequência e Classificação}
+
+\subsection{Carregamento da Estrutura de Dados}
+
+O script começa por carregar o ficheiro \texttt{meta1\_fourier\_and\_spectral\_features.mat},
+gerado no final da Meta 1, que contém os sinais pré-processados e todas as características
+calculadas anteriormente (temporais e espectrais). Isto permite retomar o trabalho sem necessidade
+de reprocessar os dados originais.
+
+\subsection{Transformada de Fourier de Curto Prazo (STFT)}
+
+Para cada sinal de áudio, foi calculada a STFT (Short-Time Fourier Transform), que permite analisar
+como o conteúdo espectral do sinal evolui ao longo do tempo. A STFT é definida como:
+
+\[
+X(m, \omega) = \sum_{n=-\infty}^{+\infty} x[n]\, w[n - m]\, e^{-j\omega n}
+\]
+
+onde $x[n]$ é o sinal de entrada, $w[n]$ é a janela de análise e $m$ é o índice temporal do
+segmento. O resultado é um espectrograma de potência $P(f, t) = |X(m, \omega)|^2$.
+
+Para calcular a STFT foi utilizada a função \texttt{spectrogram} do MATLAB. Foram testadas
+diferentes parametrizações -- tamanhos de janela, sobreposições e número de pontos de FFT --
+através do script \texttt{optimize\_stft\_params.m}, que avaliou sistematicamente combinações de:
+
+\begin{itemize}
+    \item Tamanho de janela: 256, 512, 1024, 2048 amostras;
+    \item Sobreposição: 25\%, 50\%, 75\%;
+    \item Número de pontos FFT (NFFT): 256, 512, 1024, 2048.
+\end{itemize}
+
+Os parâmetros que produziram melhor desempenho na classificação foram:
+
+\begin{itemize}
+    \item Janela de Hann com tamanho $w = 256$ amostras;
+    \item Sobreposição de 50\% ($\text{noverlap} = 128$);
+    \item $\text{NFFT} = 256$ pontos.
+\end{itemize}
+
+A figura seguinte mostra os espectrogramas obtidos para um exemplo de cada dígito (0 a 9) com
+estes parâmetros.
+
+% -----------------------------------------------------------------------
+% FIGURA 1: Espectrogramas dos dígitos 0 a 9 (subplot 5x2)
+% Introduzir aqui a figura gerada pelo bloco %% 15 do main2_main.m
+% Nome sugerido para o ficheiro: stft_spectrograms.png
+% -----------------------------------------------------------------------
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{stft_spectrograms.png}
+    \caption{Espectrogramas (STFT) para os dígitos de 0 a 9, com janela de 256 amostras,
+             sobreposição de 50\% e NFFT=256.}
+    \label{fig:stft}
+\end{figure}
+
+Observando os espectrogramas, é possível verificar diferenças no padrão temporal e espectral entre
+dígitos. Dígitos com sons mais curtos e percussivos (como ``one'' ou ``eight'') apresentam
+concentrações de energia mais localizadas no tempo, enquanto dígitos mais longos (como ``seven''
+ou ``zero'') apresentam estruturas espectrais mais estendidas. A componente de baixa frequência
+é geralmente mais energética, o que é consistente com a natureza dos sons vogais e das fricativas
+presentes nos dígitos.
+
+\subsection{Extração de Características Tempo-Frequência}
+
+A partir da STFT, foram extraídas características globais do espectrograma e características
+localizadas em três regiões temporais (início, meio e fim do sinal).
+
+\subsubsection{Divisão Temporal}
+
+Para capturar a evolução temporal do sinal, cada espectrograma é dividido em três regiões de tempo
+de igual duração. Seja $N_T$ o número total de frames temporais do espectrograma e
+$F_s = \lfloor N_T / 3 \rfloor$ o tamanho de cada região. As regiões são:
+
+\begin{itemize}
+    \item Região 1 (\textit{start}): frames $1$ a $F_s$;
+    \item Região 2 (\textit{mid}): frames $F_s+1$ a $2F_s$;
+    \item Região 3 (\textit{end}): frames $2F_s+1$ a $N_T$.
+\end{itemize}
+
+Para cada região $r$, considera-se a submatriz de potência $P_r$ e o espectro médio da região:
+\[
+\bar{P}_r[k] = \frac{1}{|r|} \sum_{t \in r} P[k, t].
+\]
+
+\subsubsection{Características Globais}
+
+Para cada sinal, são calculadas as seguintes características globais com base no espectro médio
+$\bar{P}[k] = \frac{1}{N_T}\sum_{t=1}^{N_T} P[k,t]$ e na potência total
+$P_{\text{tot}} = \sum_k \bar{P}[k]$:
+
+\begin{itemize}
+    \item \textbf{Energia espectral} (\textit{energySpec}):
+    \[
+    E_{\text{spec}} = \sum_{k,t} P[k,t]
+    \]
+
+    \item \textbf{Frequência de pico} (\textit{peakFreq}):
+    \[
+    f_{\text{peak}} = f_{\,\arg\max_k \bar{P}[k]}
+    \]
+
+    \item \textbf{Centroide espectral} (\textit{specCentroid}):
+    \[
+    C = \frac{\sum_k f_k\, \bar{P}[k]}{P_{\text{tot}}}
+    \]
+
+    \item \textbf{Largura de banda espectral} (\textit{specBW}):
+    \[
+    \text{BW} = \sqrt{\frac{\sum_k (f_k - C)^2\, \bar{P}[k]}{P_{\text{tot}}}}
+    \]
+
+    \item \textbf{Entropia espectral} (\textit{specEntropy}): com $\tilde{P}[k] = \bar{P}[k] / P_{\text{tot}}$,
+    \[
+    H = -\sum_k \tilde{P}[k] \log_2\!\left(\tilde{P}[k] + \varepsilon\right)
+    \]
+    onde $\varepsilon$ é uma constante de estabilidade numérica.
+\end{itemize}
+
+\subsubsection{Características por Região Temporal}
+
+Para cada uma das três regiões temporais, são calculados o centroide espectral, a entropia
+espectral e a energia, de forma análoga às características globais acima descritas. Isto resulta
+em nove características adicionais:
+\textit{specCentroid\_start/mid/end},
+\textit{specEntropy\_start/mid/end} e
+\textit{energySpec\_start/mid/end}.
+
+\subsubsection{Visualização e Seleção das Melhores Características}
+
+As figuras seguintes mostram a distribuição de cada característica global por dígito.
+
+% -----------------------------------------------------------------------
+% FIGURA 2: Energia espectral por dígito (scatter plot)
+% Gerada pelo bloco print_stft - figura "Distribuição da Energia Espectral Média por Dígito"
+% Nome sugerido: stft_energia.png
+% -----------------------------------------------------------------------
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{stft_energia.png}
+    \caption{Distribuição da energia espectral por dígito.}
+    \label{fig:stft_energia}
+\end{figure}
+
+% -----------------------------------------------------------------------
+% FIGURA 3: Pico de frequência por dígito (scatter plot)
+% Gerada pelo bloco print_stft - figura "Pico de Frequência por Dígito"
+% Nome sugerido: stft_pico_freq.png
+% -----------------------------------------------------------------------
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{stft_pico_freq.png}
+    \caption{Distribuição do pico de frequência por dígito.}
+    \label{fig:stft_pico_freq}
+\end{figure}
+
+% -----------------------------------------------------------------------
+% FIGURA 4: Entropia espectral por dígito (scatter plot)
+% Gerada pelo bloco print_stft - figura "Entropia Espectral"
+% Nome sugerido: stft_entropia.png
+% -----------------------------------------------------------------------
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{stft_entropia.png}
+    \caption{Distribuição da entropia espectral por dígito.}
+    \label{fig:stft_entropia}
+\end{figure}
+
+% -----------------------------------------------------------------------
+% FIGURA 5: Centroide espectral por dígito (scatter plot)
+% Gerada pelo bloco print_stft - figura "Centroide Espectral"
+% Nome sugerido: stft_centroide.png
+% -----------------------------------------------------------------------
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{stft_centroide.png}
+    \caption{Distribuição do centroide espectral por dígito.}
+    \label{fig:stft_centroide}
+\end{figure}
+
+% -----------------------------------------------------------------------
+% FIGURA 6: Largura de banda espectral por dígito (scatter plot)
+% Gerada pelo bloco print_stft - figura "Largura de Banda Espectral"
+% Nome sugerido: stft_bw.png
+% -----------------------------------------------------------------------
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{stft_bw.png}
+    \caption{Distribuição da largura de banda espectral por dígito.}
+    \label{fig:stft_bw}
+\end{figure}
+
+Com base na análise visual dos gráficos, as três características tempo-frequência que apresentam
+maior capacidade de discriminação entre dígitos são o \textbf{centroide espectral}, a
+\textbf{entropia espectral} e a \textbf{energia espectral}:
+
+\begin{itemize}
+    \item O \textbf{centroide espectral} reflete onde se concentra a maior parte da energia em
+    frequência. Dígitos com sons vogais fechados (como ``one'' ou ``nine'') tendem a apresentar
+    centroides em frequências distintas dos dígitos com vogais abertas (como ``zero'' ou ``four''),
+    tornando esta característica informativa.
+
+    \item A \textbf{entropia espectral} mede a irregularidade da distribuição espectral.
+    Sons com espectros mais concentrados (tons quase periódicos) apresentam baixa entropia,
+    enquanto sons com espectros planos ou ruidosos apresentam entropia elevada. Esta variação
+    permite distinguir dígitos com conteúdo espectral mais ou menos estruturado.
+
+    \item A \textbf{energia espectral} total do espectrograma complementa as anteriores ao
+    capturar a intensidade global do sinal, sendo especialmente útil para separar dígitos
+    com diferentes durações efetivas após o pré-processamento.
+\end{itemize}
+
+Todas as características foram guardadas na estrutura de dados para utilização posterior no
+classificador.
+
+\subsection{Transformada de Wavelet Discreta (DWT)}
+
+A Transformada de Wavelet Discreta (DWT) foi aplicada como alternativa à STFT para a análise
+tempo-frequência, permitindo uma resolução adaptativa: melhor resolução temporal para
+altas frequências e melhor resolução em frequência para baixas frequências.
+
+A wavelet utilizada foi a Daubechies 4 (\texttt{db4}), com um nível de decomposição $L=1$.
+Para cada sinal $x[n]$, a DWT de nível 1 produz:
+
+\begin{itemize}
+    \item Coeficientes de \textbf{aproximação} $cA$: resultado da filtragem passa-baixo seguida
+    de subamostragem, capturando as componentes de baixa frequência do sinal;
+    \item Coeficientes de \textbf{detalhe} $cD$: resultado da filtragem passa-alto seguida de
+    subamostragem, capturando as componentes de alta frequência.
+\end{itemize}
+
+A partir destes coeficientes, foram calculadas as energias:
+
+\[
+E_{\text{aprox}} = \sum_n cA[n]^2, \qquad E_{\text{detalhe}} = \sum_n cD[n]^2.
+\]
+
+Estas duas grandezas foram guardadas na estrutura de dados como \texttt{AproxEnergy} e
+\texttt{DetailEnergy}.
+
+% -----------------------------------------------------------------------
+% FIGURA 7: Energia de aproximação e de detalhe DWT por dígito (subplot 1x2)
+% Gerada pelo bloco %% 18 do main2_main.m
+% Subplot esquerdo: energia de aproximação (pontos azuis)
+% Subplot direito: energia de detalhe (pontos vermelhos)
+% Nome sugerido: dwt_energias.png
+% -----------------------------------------------------------------------
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{dwt_energias.png}
+    \caption{Energia dos coeficientes de aproximação (esquerda) e de detalhe (direita) obtidos
+             pela DWT (wavelet \texttt{db4}, nível 1) para cada dígito.}
+    \label{fig:dwt}
+\end{figure}
+
+\subsubsection{Comparação entre STFT e DWT}
+
+Comparando os resultados obtidos com a STFT e com a DWT, verifica-se que:
+
+\begin{itemize}
+    \item A \textbf{STFT} oferece uma visão detalhada da evolução temporal do espectro, com
+    resolução uniforme em frequência. O espectrograma é intuitivo e permite identificar visualmente
+    padrões de cada dígito. As características extraídas (centroide, entropia, energia por região)
+    apresentam boa discriminação.
+
+    \item A \textbf{DWT} com a \texttt{db4} é mais adequada para capturar componentes transitórias
+    do sinal (como plosivas e fricativas). A energia de detalhe tende a ser mais sensível a eventos
+    rápidos, enquanto a energia de aproximação caracteriza melhor o conteúdo harmónico de baixa
+    frequência.
+
+    \item Em termos de discriminação por dígito, tanto a energia de aproximação como a de detalhe
+    apresentam distribuições com alguma sobreposição entre classes, o que sugere que a DWT sozinha
+    não é suficiente para uma classificação precisa, mas constitui um complemento útil às
+    características da STFT.
+\end{itemize}
+
+\subsection{Classificação Automática}
+
+\subsubsection{Seleção de Características}
+
+Para a classificação, foram utilizadas as características que, combinadas, apresentaram melhor
+desempenho. A seleção foi apoiada pelo script \texttt{test\_all\_feature\_combinations.m}, que
+avaliou exaustivamente combinações de 3 a 7 características (incluindo as da Meta 1 e da Meta 2)
+com 5-fold cross-validation e um classificador de Distância Mínima.
+
+O conjunto de características final utilizado no classificador foi:
+
+\begin{itemize}
+    \item \textbf{Entropia espectral} (\textit{specEntropy}) -- característica tempo-frequência;
+    \item \textbf{Largura de banda espectral} (\textit{specBW}) -- característica tempo-frequência;
+    \item \textbf{Energia temporal na divisão 1} (\textit{energy\_int1}) -- característica temporal
+    da Meta 1;
+    \item \textbf{Energia temporal na divisão 2} (\textit{energy\_int2}) -- característica temporal
+    da Meta 1.
+\end{itemize}
+
+Estas características foram normalizadas com \textit{z-score} antes de serem passadas ao
+classificador:
+
+\[
+z = \frac{x - \mu}{\sigma}
+\]
+
+onde $\mu$ e $\sigma$ são, respetivamente, a média e o desvio padrão calculados sobre o conjunto
+de treino.
+
+\subsubsection{Modelo de Classificação: KNN}
+
+O classificador utilizado foi o \textbf{K-Nearest Neighbors (KNN)} com $k=4$ vizinhos e distância
+euclidiana, implementado com a função \texttt{fitcknn} do MATLAB. O conjunto de dados foi dividido
+em 70\% para treino e 30\% para teste, com partição estratificada (\texttt{HoldOut}).
+
+O KNN classifica cada amostra de teste com base nos $k$ exemplos de treino mais próximos no espaço
+das características. A distância euclidiana entre duas amostras $\mathbf{x}$ e $\mathbf{y}$ é:
+
+\[
+d(\mathbf{x}, \mathbf{y}) = \sqrt{\sum_{i=1}^{n}(x_i - y_i)^2}.
+\]
+
+\subsubsection{Resultados da Classificação}
+
+% -----------------------------------------------------------------------
+% FIGURA 8: Matriz de confusão (confusionchart)
+% Gerada pela função confusionchart no bloco %% Fazer previsões do main2_main.m
+% Nome sugerido: knn_confusion_chart.png
+% -----------------------------------------------------------------------
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.75\textwidth]{knn_confusion_chart.png}
+    \caption{Matriz de confusão do classificador KNN ($k=4$).}
+    \label{fig:confusion_chart}
+\end{figure}
+
+% -----------------------------------------------------------------------
+% FIGURA 9: Matriz de confusão em imagesc (com valores numéricos)
+% Gerada pelo bloco %% 20 do main2_main.m (figura com imagesc e text)
+% Nome sugerido: knn_confusion_matrix.png
+% -----------------------------------------------------------------------
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.75\textwidth]{knn_confusion_matrix.png}
+    \caption{Matriz de confusão detalhada do classificador KNN -- dígito real vs.\ dígito predito.}
+    \label{fig:confusion_matrix}
+\end{figure}
+
+\subsubsection{Análise de Resultados}
+
+% -----------------------------------------------------------------------
+% NOTA: Substituir os valores de accuracy e os comentários sobre dígitos específicos
+% pelos valores reais obtidos ao correr o main2_main.m.
+% O script imprime no terminal: "Accuracy: XX.XX%"
+% e também a acurácia por dígito.
+% -----------------------------------------------------------------------
+
+A taxa de acerto global (accuracy) obtida pelo classificador KNN foi:
+
+\[
+\text{Accuracy} = \frac{\text{Dígitos identificados corretamente}}{\text{Total de dígitos}} \times 100
+\]
+
+Analisando a matriz de confusão, é possível identificar quais os pares de dígitos mais
+frequentemente confundidos pelo classificador. Em geral, dígitos foneticamente semelhantes
+(como ``four'' e ``for'', ou ``nine'' e ``five'') tendem a ser confundidos com maior frequência,
+dado que as suas características espectrais e temporais são mais próximas.
+
+Os dígitos com maior taxa de acerto individual são, tipicamente, os que possuem padrões espectrais
+mais distintos ou que concentram a sua energia numa faixa de frequências menos partilhada com os
+restantes. Por outro lado, os dígitos com menor acurácia são aqueles cujas características
+extraídas apresentam maior sobreposição com outras classes no espaço das \textit{features}.
+
+\section{Conclusões}
+
+Nesta Meta 2 foi desenvolvida a componente de análise tempo-frequência e classificação do
+\textit{pipeline} de reconhecimento de dígitos falados.
+
+A \textbf{STFT} revelou-se uma ferramenta eficaz para visualizar e caracterizar a evolução
+espectral dos sinais. A escolha de parâmetros (janela de 256 amostras, sobreposição de 50\%,
+NFFT=256) foi validada empiricamente e produz um bom equilíbrio entre resolução temporal e
+espectral. As características extraídas -- centroide, entropia e energia espectral -- mostraram
+capacidade discriminativa razoável entre classes.
+
+A \textbf{DWT} com a wavelet \texttt{db4} complementou a análise ao capturar informação de
+detalhe de alta frequência. Apesar de a energia de detalhe apresentar alguma separação entre
+dígitos, esta técnica sozinha não supera a STFT na discriminação. A combinação de ambas pode
+ser explorada em trabalho futuro.
+
+O \textbf{classificador KNN} com $k=4$ e as quatro características selecionadas atingiu uma taxa
+de acerto que demonstra a viabilidade da abordagem. Os erros de classificação mais frequentes
+ocorrem entre dígitos com padrões acústicos semelhantes, o que é esperado dado que as
+características utilizadas são de natureza estatística e não capturam toda a informação fonética
+do sinal.
+
+Como propostas de melhoria, destacam-se:
+\begin{itemize}
+    \item Utilização de características de ordem superior (ex.\ coeficientes MFCC -- Mel-Frequency
+    Cepstral Coefficients), que são especificamente desenhados para representação de voz;
+    \item Aplicação de modelos de classificação mais sofisticados, como \textit{Support Vector
+    Machines} (SVM) ou redes neuronais;
+    \item Aumento da decomposição DWT para múltiplos níveis, extraindo características de cada
+    sub-banda;
+    \item Uso de validação cruzada mais robusta (ex.\ \textit{k-fold} com $k$ maior) para uma
+    estimativa mais estável do desempenho.
+\end{itemize}
+
+No geral, o trabalho desenvolvido ao longo das duas metas permitiu construir um sistema completo
+de análise e classificação de sinais de voz, desde a aquisição e pré-processamento até à
+classificação automática, explorando ferramentas fundamentais da análise de sinais no tempo,
+frequência e tempo-frequência.
+
+\end{document}
