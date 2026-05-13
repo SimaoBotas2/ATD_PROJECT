@@ -25,6 +25,9 @@
 \maketitle
 \endgroup
 
+\newpage
+
+
 \section{Introdução}
 
 Este relatório corresponde à Meta 2 do projeto de Análise e Transformação de Dados, que tem como
@@ -47,10 +50,9 @@ Tal como na Meta 1, o trabalho foi desenvolvido em MATLAB. A estrutura de dados 
 anteriormente foi carregada a partir do ficheiro \texttt{.mat} guardado no final da meta anterior,
 e foi sendo atualizada ao longo dos exercícios com as novas características extraídas.
 
-O script principal da Meta 2 é o \texttt{main2\_main.m}, localizado em \texttt{src/meta2/}. Foram
-também desenvolvidos scripts auxiliares de teste e otimização em \texttt{src/meta2/tests/}, que
-permitiram identificar os melhores parâmetros STFT e as melhores combinações de características
-para o classificador.
+O script principal da Meta 2 é o \texttt{main2\_main.m}. Foi também desenvolvido o script auxiliar
+\texttt{optimize\_stft\_params.m}, que permitiu identificar os melhores parâmetros STFT para o
+trabalho.
 
 \section{Meta 2 -- Análise Tempo-Frequência e Classificação}
 
@@ -332,9 +334,7 @@ Comparando os resultados obtidos com a STFT e com a DWT, verifica-se que:
 \subsubsection{Seleção de Características}
 
 Para a classificação, foram utilizadas as características que, combinadas, apresentaram melhor
-desempenho. A seleção foi apoiada pelo script \texttt{test\_all\_feature\_combinations.m}, que
-avaliou exaustivamente combinações de 3 a 7 características (incluindo as da Meta 1 e da Meta 2)
-com 5-fold cross-validation e um classificador de Distância Mínima.
+capacidade de discriminação com base na análise visual efetuada nos pontos anteriores.
 
 O conjunto de características final utilizado no classificador foi:
 
@@ -374,52 +374,41 @@ d(\mathbf{x}, \mathbf{y}) = \sqrt{\sum_{i=1}^{n}(x_i - y_i)^2}.
 
 % -----------------------------------------------------------------------
 % FIGURA 8: Matriz de confusão (confusionchart)
-% Gerada pela função confusionchart no bloco %% Fazer previsões do main2_main.m
+% Gerada pelo bloco %% 20 do main2_main.m
 % Nome sugerido: knn_confusion_chart.png
 % -----------------------------------------------------------------------
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.75\textwidth]{knn_confusion_chart.png}
-    \caption{Matriz de confusão do classificador KNN ($k=4$).}
+    \includegraphics[width=0.8\textwidth]{knn_confusion_chart.png}
+    \caption{Matriz de confusão do classificador KNN ($k=4$), com indicação do número de amostras
+             por célula.}
     \label{fig:confusion_chart}
 \end{figure}
 
-% -----------------------------------------------------------------------
-% FIGURA 9: Matriz de confusão em imagesc (com valores numéricos)
-% Gerada pelo bloco %% 20 do main2_main.m (figura com imagesc e text)
-% Nome sugerido: knn_confusion_matrix.png
-% -----------------------------------------------------------------------
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.75\textwidth]{knn_confusion_matrix.png}
-    \caption{Matriz de confusão detalhada do classificador KNN -- dígito real vs.\ dígito predito.}
-    \label{fig:confusion_matrix}
-\end{figure}
 
 \subsubsection{Análise de Resultados}
 
-% -----------------------------------------------------------------------
-% NOTA: Substituir os valores de accuracy e os comentários sobre dígitos específicos
-% pelos valores reais obtidos ao correr o main2_main.m.
-% O script imprime no terminal: "Accuracy: XX.XX%"
-% e também a acurácia por dígito.
-% -----------------------------------------------------------------------
-
-A taxa de acerto global (accuracy) obtida pelo classificador KNN foi:
+A taxa de acerto global obtida pelo classificador KNN ($k=4$) no conjunto de teste (30\% dos dados)
+foi de \textbf{74.00\%}, correspondendo a 111 amostras corretamente classificadas em 150.
 
 \[
-\text{Accuracy} = \frac{\text{Dígitos identificados corretamente}}{\text{Total de dígitos}} \times 100
+\text{Accuracy} = \frac{111}{150} \times 100 = 74{,}00\%
 \]
 
-Analisando a matriz de confusão, é possível identificar quais os pares de dígitos mais
-frequentemente confundidos pelo classificador. Em geral, dígitos foneticamente semelhantes
-(como ``four'' e ``for'', ou ``nine'' e ``five'') tendem a ser confundidos com maior frequência,
-dado que as suas características espectrais e temporais são mais próximas.
+Analisando os resultados por dígito, verificam-se diferenças consideráveis de desempenho entre
+classes. O dígito \textbf{6} (\textit{six}) foi o melhor classificado, com uma taxa de acerto de
+93,3\% (14 em 15 amostras), seguido dos dígitos \textbf{2} (\textit{two}) e \textbf{9}
+(\textit{nine}), ambos com 86,7\%. Por outro lado, o dígito \textbf{0} (\textit{zero}) revelou-se
+o mais difícil de classificar, com apenas 46,7\% de acerto (7 em 15), seguido do dígito \textbf{3}
+(\textit{three}) com 53,3\%.
 
-Os dígitos com maior taxa de acerto individual são, tipicamente, os que possuem padrões espectrais
-mais distintos ou que concentram a sua energia numa faixa de frequências menos partilhada com os
-restantes. Por outro lado, os dígitos com menor acurácia são aqueles cujas características
-extraídas apresentam maior sobreposição com outras classes no espaço das \textit{features}.
+A confusão mais frequente ocorre entre os dígitos \textbf{3} e \textbf{0}: o dígito 3 foi
+classificado como 0 em 6 das 15 amostras, e o dígito 0 foi classificado como 3 em 3 ocasiões.
+Esta confusão bidirecional sugere que as características extraídas não conseguem separar
+eficazmente estes dois dígitos, provavelmente por partilharem padrões espectrais e de energia
+semelhantes. Outras confusões notáveis incluem o dígito \textbf{5} classificado como 7 (3 vezes)
+e o dígito \textbf{8} classificado como 2 (3 vezes), o que é consistente com a semelhança
+fonética entre estes pares em inglês.
 
 \section{Conclusões}
 
@@ -459,5 +448,13 @@ No geral, o trabalho desenvolvido ao longo das duas metas permitiu construir um 
 de análise e classificação de sinais de voz, desde a aquisição e pré-processamento até à
 classificação automática, explorando ferramentas fundamentais da análise de sinais no tempo,
 frequência e tempo-frequência.
+
+\vspace{2em}
+\noindent\rule{\textwidth}{0.4pt}
+\vspace{0.5em}
+
+\noindent\small\textit{Nota: Este relatório foi redigido pelo autor com recurso a um modelo de
+linguagem (LLM) para revisão, reformulação e reestruturação de algumas secções. Todo o código,
+análise e resultados são da responsabilidade do autor.}
 
 \end{document}

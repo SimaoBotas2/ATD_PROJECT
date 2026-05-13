@@ -363,11 +363,7 @@ accuracy = sum(predictedDigit == Yteste) / length(Yteste);
 
 fprintf('Accuracy: %.2f%%\n', accuracy * 100);
 
-%% Matriz de confusão
-figure;
-confusionchart(Yteste, predictedDigit);
-title(sprintf('KNN Confusion Matrix (k = %d)', k));
-%% 20: Análise de Resultados
+%% 20: Matriz de confusão e análise de resultados
 
 % Mostrar amostras de previsão
 T = table(Yteste, predictedDigit);
@@ -377,30 +373,13 @@ disp(T);
 accuracy = mean(predictedDigit == Yteste) * 100;
 fprintf('\nTaxa de acerto global: %.2f%%\n', accuracy);
 
-% Confusion matrix
-confMatrix = confusionmat(Yteste, predictedDigit);
-
-figure('Name', 'Confusion Matrix');
-imagesc(confMatrix);
-colorbar;
-xlabel('Dígito Predito');
-ylabel('Dígito Real');
-title('Matriz de Confusão - Classificador Minimum Distance');
-xticks(1:10);
-yticks(1:10);
-xticklabels(0:9);
-yticklabels(0:9);
-
-% Adicionar números na matriz
-for i = 1:10
-    for j = 1:10
-        text(j, i, num2str(confMatrix(i,j)), 'HorizontalAlignment', 'center', ...
-            'VerticalAlignment', 'middle', 'Color', 'white', 'FontWeight', 'bold');
-    end
-end
+% Matriz de confusão
+figure;
+confusionchart(Yteste, predictedDigit);
+title(sprintf('Matriz de Confusão - KNN (k = %d)', k));
 
 % Acurácia por dígito
-fprintf('\nAcuraccy por dígito:\n');
+fprintf('\nAcurácia por dígito:\n');
 for d = 0:9
     idxDigit = Yteste == d;
     if sum(idxDigit) > 0
